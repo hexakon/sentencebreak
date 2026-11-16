@@ -100,5 +100,5 @@ if __name__ == '__main__':
                                    {'tStartMs': 3000, 'dDurationMs': 1000, 'segs': [{'utf8': 'c'}]}]}) == \
         [{'start': 0, 'end': 3, 'text': 'a b'}, {'start': 3, 'end': 4, 'text': 'c'}]
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    print(f'http://localhost:{port}')
-    ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()
+    print(f'http://0.0.0.0:{port}')
+    ThreadingHTTPServer(('', port), Handler).serve_forever()
