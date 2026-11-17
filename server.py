@@ -1,4 +1,4 @@
-"""Serves public/ and GET /api/subs?v=<id>[&lang=<key>] -> {title, channel, lang, langs, cues}.
+"""Serves public/ and GET /api/subs?v=<id>[&lang=<key>][&pref=<key>] -> {title, channel, lang, langs, cues}.
 
 Run: python server.py [port]   (needs yt-dlp: pip install yt-dlp)
 """
@@ -35,11 +35,13 @@ def tracks(vid):
     return _cache[vid][1:]
 
 
-def pick(keys, orig):
-    """Manual English > manual original language > any manual > auto original > auto English."""
+def pick(keys, orig, pref=''):
+    """Preferred language (manual first) > manual English > manual original > any manual > auto original > auto English."""
+    code = pref[2:].removesuffix('-orig')
+    liked = [f'm:{code}', pref, f'a:{code}-orig', f'a:{code}'] if code else []
     en = sorted(k for k in keys if k.startswith('m:en'))
     manual = [k for k in keys if k.startswith('m:')]
-    for k in [*en, f'm:{orig}', *manual, f'a:{orig}-orig', f'a:{orig}', 'a:en-orig', 'a:en']:
+    for k in [*liked, *en, f'm:{orig}', *manual, f'a:{orig}-orig', f'a:{orig}', 'a:en-orig', 'a:en']:
         if k in keys:
             return k
     return next(iter(keys), None)
@@ -67,13 +69,13 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path != '/api/subs':
             return super().do_GET()
         q = parse_qs(url.query)
-        vid, lang = q.get('v', [''])[0], q.get('lang', [''])[0]
+        vid, lang, pref = q.get('v', [''])[0], q.get('lang', [''])[0], q.get('pref', [''])[0]
         if not VIDEO_ID.match(vid):
             return self.send_json(400, {'error': 'Invalid video id'})
         try:
             title, channel, orig, subs = tracks(vid)
             if lang not in subs:
-                lang = pick(subs, orig)
+                lang = pick(subs, orig, pref)
             if not lang:
                 return self.send_json(404, {'error': 'This video has no subtitles'})
             with YoutubeDL(YDL_OPTS) as ydl:
@@ -95,6 +97,9 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     assert pick({'a:en': 1, 'm:fr': 1}, 'en') == 'm:fr'
     assert pick({'a:ja-orig': 1, 'a:en': 1}, 'ja') == 'a:ja-orig'
+    assert pick({'m:en': 1, 'm:ja': 1, 'a:ja': 1}, 'ja', 'a:ja-orig') == 'm:ja'
+    assert pick({'m:en': 1, 'a:ja-orig': 1}, 'ja', 'm:ja') == 'a:ja-orig'
+    assert pick({'m:en': 1, 'a:ja': 1}, 'en', 'm:fr') == 'm:en'
     assert parse_json3({'events': [{'tStartMs': 0, 'dDurationMs': 5000, 'segs': [{'utf8': 'a\nb'}]},
                                    {'tStartMs': 2000, 'segs': [{'utf8': '\n'}]},
                                    {'tStartMs': 3000, 'dDurationMs': 1000, 'segs': [{'utf8': 'c'}]}]}) == \

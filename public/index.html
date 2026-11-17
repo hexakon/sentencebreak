@@ -115,7 +115,7 @@ const $ = s => document.querySelector(s);
 const EPS = 0.03; // seconds of slack around line boundaries
 const ytReady = new Promise(r => window.onYouTubeIframeAPIReady = r);
 
-const settings = { autoPause: true, speed: 1 };
+const settings = { autoPause: true, speed: 1, lang: '' }; // lang: last picked, the default for new videos
 try { Object.assign(settings, JSON.parse(localStorage.settings)); } catch {}
 const save = () => { try { localStorage.settings = JSON.stringify(settings); } catch {} };
 
@@ -123,7 +123,7 @@ let player, vid, cues = [], cur = -1, playing = false, pending = null, lastT = -
 let atEnd = -1; // index of the line we auto-paused at the end of
 let resume = false; // jump to the line they were last at on first play
 
-// video id -> {title, channel, t}, oldest first; t is the start of the line they were last at
+// video id -> {title, channel, lang, t}, oldest first; t is the start of the line they were last at
 let hist = {};
 try { hist = JSON.parse(localStorage.history) || {}; } catch {}
 const saveHist = () => { try { localStorage.history = JSON.stringify(hist); } catch {} };
@@ -238,10 +238,10 @@ async function openVideo(id) {
   });
 }
 
-async function load(id, lang = '') {
+async function load(id, lang = '', fresh = false) {
   msg('Loading subtitles…');
   try {
-    const r = await fetch(`/api/subs?v=${id}&lang=${encodeURIComponent(lang)}`);
+    const r = await fetch(`/api/subs?v=${id}&lang=${encodeURIComponent(lang)}&pref=${encodeURIComponent(settings.lang)}`);
     const d = await r.json();
     if (!r.ok) throw Error(d.error);
     if (id !== vid) return; // a different video was opened meanwhile
@@ -260,16 +260,19 @@ async function load(id, lang = '') {
     };
     $('#lang').replaceChildren(...group('Subtitles', false), ...group('Auto-generated', true));
     $('#lang').value = d.lang;
-    if (!lang) { // fresh open: move to the top of history, resume where they left off
+    if (fresh) { // move to the top of history, resume where they left off
       const t = hist[id]?.t ?? 0;
       delete hist[id];
-      hist[id] = { title: d.title, channel: d.channel, t };
+      hist[id] = { title: d.title, channel: d.channel, lang: d.lang, t };
       saveHist();
       renderHist();
       if (t) {
         setCur(indexAt(t));
         if (cur >= 0) playing ? go(cur) : (resume = true);
       }
+    } else if (hist[id]) {
+      hist[id].lang = d.lang;
+      saveHist();
     }
     msg(cues.length ? '' : 'No subtitle lines found.');
   } catch (e) {
@@ -296,7 +299,7 @@ function renderHist() {
 function start(id) {
   if ($('#history').matches(':popover-open')) $('#history').hidePopover();
   openVideo(id);
-  load(id);
+  load(id, hist[id]?.lang, true);
 }
 $('#form').onsubmit = e => {
   e.preventDefault();
@@ -308,7 +311,7 @@ $('#play').onclick = togglePlay;
 $('#replay').onclick = () => go(Math.max(cur, 0));
 $('#prev').onclick = () => go(cur - 1);
 $('#next').onclick = () => go(cur + 1);
-$('#lang').onchange = e => load(vid, e.target.value);
+$('#lang').onchange = e => { settings.lang = e.target.value; save(); load(vid, settings.lang); };
 $('#autopause').checked = settings.autoPause;
 $('#autopause').onchange = e => { settings.autoPause = e.target.checked; save(); };
 $('#speed').value = settings.speed;
