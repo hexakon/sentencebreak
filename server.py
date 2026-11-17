@@ -1,4 +1,4 @@
-"""Serves public/ and GET /api/subs?v=<id>[&lang=<key>] -> {lang, langs, cues}.
+"""Serves public/ and GET /api/subs?v=<id>[&lang=<key>] -> {title, channel, lang, langs, cues}.
 
 Run: python server.py [port]   (needs yt-dlp: pip install yt-dlp)
 """
@@ -16,7 +16,7 @@ PUBLIC = Path(__file__).parent / 'public'
 VIDEO_ID = re.compile(r'^[\w-]{11}$')
 YDL_OPTS = {'quiet': True, 'no_warnings': True, 'skip_download': True}
 TTL = 3600  # caption URLs from YouTube expire after a few hours
-_cache = {}  # video id -> (fetched_at, language, tracks); ponytail: unbounded, add LRU if it ever runs for weeks
+_cache = {}  # video id -> (fetched_at, title, channel, language, tracks); ponytail: unbounded, add LRU if it ever runs for weeks
 
 
 def tracks(vid):
@@ -31,8 +31,8 @@ def tracks(vid):
             url = next((f['url'] for f in fmts if f.get('ext') == 'json3'), None)
             if url and code != 'live_chat':
                 out[f'{kind}:{code}'] = {'name': fmts[0].get('name') or code, 'url': url}
-    _cache[vid] = (time.time(), info.get('language'), out)
-    return info.get('language'), out
+    _cache[vid] = (time.time(), info.get('title') or vid, info.get('channel') or info.get('uploader') or '', info.get('language'), out)
+    return _cache[vid][1:]
 
 
 def pick(keys, orig):
@@ -71,7 +71,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not VIDEO_ID.match(vid):
             return self.send_json(400, {'error': 'Invalid video id'})
         try:
-            orig, subs = tracks(vid)
+            title, channel, orig, subs = tracks(vid)
             if lang not in subs:
                 lang = pick(subs, orig)
             if not lang:
@@ -81,7 +81,7 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self.send_json(502, {'error': str(e).removeprefix('ERROR: ')})
         langs = [{'key': k, 'name': v['name']} for k, v in subs.items()]
-        self.send_json(200, {'lang': lang, 'langs': langs, 'cues': cues})
+        self.send_json(200, {'title': title, 'channel': channel, 'lang': lang, 'langs': langs, 'cues': cues})
 
     def send_json(self, code, obj):
         body = json.dumps(obj).encode()
