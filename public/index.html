@@ -84,14 +84,14 @@
 <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const EPS = 0.1; // seconds of slack around line boundaries
+const EPS = 0.03; // seconds of slack around line boundaries
 const ytReady = new Promise(r => window.onYouTubeIframeAPIReady = r);
 
 const settings = { autoPause: true, speed: 1 };
 try { Object.assign(settings, JSON.parse(localStorage.settings)); } catch {}
 const save = () => { try { localStorage.settings = JSON.stringify(settings); } catch {} };
 
-let player, vid, cues = [], cur = -1, playing = false, pending = null, lastT = -1, lastAt = 0;
+let player, vid, cues = [], cur = -1, playing = false, pending = null, lastT = -1, off = null, endTimer = 0;
 let atEnd = -1; // index of the line we auto-paused at the end of
 
 const parseId = s => (s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/) || s.trim().match(/^([\w-]{11})$/))?.[1];
@@ -99,15 +99,29 @@ const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,
 const msg = text => { $('#msg').textContent = text; $('#msg').hidden = !text; };
 const indexAt = t => cues.findLastIndex(c => c.start <= t + EPS);
 
-// The iframe API only reports time a few times a second; extrapolate between reports.
+// The iframe API only reports time a few times a second, and we notice each report late.
+// Model video time as clock + offset: a report is never early, so the largest offset is the least delayed one.
 function now() {
-  const t = player.getCurrentTime();
-  if (t !== lastT) { lastT = t; lastAt = performance.now(); }
-  return playing ? t + Math.min(0.5, (performance.now() - lastAt) / 1000) * settings.speed : t;
+  const t = player.getCurrentTime(), rate = player.getPlaybackRate() || 1, clock = performance.now() / 1000 * rate;
+  if (!playing) { off = null; lastT = t; return t; }
+  if (t !== lastT) {
+    lastT = t;
+    const o = t - clock;
+    if (off === null || o > off || o < off - 0.1) off = o; // fell well behind: stall or seek, re-anchor
+  }
+  return Math.min(Math.max(off + clock, t), t + 0.5 * rate); // stay near the last report if reports stop
+}
+
+function stopAtEnd() {
+  if (!playing || atEnd === cur) return;
+  playing = false;
+  atEnd = cur;
+  player.pauseVideo();
 }
 
 function setCur(i) {
   atEnd = -1;
+  clearTimeout(endTimer);
   const items = $('#list').children;
   items[cur]?.classList.remove('cur');
   cur = i;
@@ -146,10 +160,10 @@ function tick() {
   }
   const c = cues[cur];
   if (playing) {
-    if (settings.autoPause && c && atEnd !== cur && t >= c.end - EPS && t < c.end + 1) {
-      playing = false;
-      atEnd = cur;
-      return player.pauseVideo();
+    if (settings.autoPause && c && atEnd !== cur && t < c.end + 1) {
+      // poll until the end is under two ticks away, then time the pause exactly
+      const left = (c.end - EPS - t) / (player.getPlaybackRate() || 1);
+      if (left < 0.06) { clearTimeout(endTimer); endTimer = setTimeout(stopAtEnd, left * 1000); return; }
     }
     const i = indexAt(t);
     if (i !== cur) setCur(i);
