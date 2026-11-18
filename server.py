@@ -38,7 +38,8 @@ def tracks(vid):
 def pick(keys, orig, pref=''):
     """Preferred language (manual first) > manual English > manual original > any manual > auto original > auto English."""
     code = pref[2:].removesuffix('-orig')
-    liked = [f'm:{code}', pref, f'a:{code}-orig', f'a:{code}'] if code else []
+    codes = [code, 'zh-Hant'] if code == 'zh-TW' else [code]  # YouTube auto-translates to zh-Hant, never zh-TW
+    liked = [f'm:{c}' for c in codes] + [pref] + [f'a:{c}{s}' for c in codes for s in ('-orig', '')] if code else []
     en = sorted(k for k in keys if k.startswith('m:en'))
     manual = [k for k in keys if k.startswith('m:')]
     for k in [*liked, *en, f'm:{orig}', *manual, f'a:{orig}-orig', f'a:{orig}', 'a:en-orig', 'a:en']:
@@ -100,6 +101,7 @@ if __name__ == '__main__':
     assert pick({'m:en': 1, 'm:ja': 1, 'a:ja': 1}, 'ja', 'a:ja-orig') == 'm:ja'
     assert pick({'m:en': 1, 'a:ja-orig': 1}, 'ja', 'm:ja') == 'a:ja-orig'
     assert pick({'m:en': 1, 'a:ja': 1}, 'en', 'm:fr') == 'm:en'
+    assert pick({'m:en': 1, 'a:zh-Hans': 1, 'a:zh-Hant': 1}, 'en', 'm:zh-TW') == 'a:zh-Hant'
     assert parse_json3({'events': [{'tStartMs': 0, 'dDurationMs': 5000, 'segs': [{'utf8': 'a\nb'}]},
                                    {'tStartMs': 2000, 'segs': [{'utf8': '\n'}]},
                                    {'tStartMs': 3000, 'dDurationMs': 1000, 'segs': [{'utf8': 'c'}]}]}) == \

@@ -51,6 +51,10 @@
     padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--bg);
     box-shadow: 0 8px 24px #0004;
   }
+  #ui { display: flex; justify-content: center; gap: .5rem; padding-bottom: .5rem; margin-bottom: .25rem; border-bottom: 1px solid var(--line); }
+  #ui button { padding: .3rem; border: 2px solid transparent; border-radius: .5rem; background: none; line-height: 0; cursor: pointer; }
+  #ui button[aria-pressed=true] { border-color: var(--accent); }
+  #ui img { width: 2rem; height: 2rem; }
   #settings label { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .4rem 0; }
   #settings select { max-width: 10rem; }
   #settings input[type=checkbox] { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); }
@@ -84,24 +88,29 @@
 </head>
 <body>
 <form id="form">
-  <input id="url" type="url" placeholder="YouTube URL" required autocomplete="off">
-  <button>Load</button>
-  <button id="histbtn" type="button" popovertarget="history" aria-label="History"><i data-lucide="history"></i></button>
+  <input id="url" type="url" required autocomplete="off">
+  <button data-t="load"></button>
+  <button id="histbtn" type="button" popovertarget="history" data-t-label="history"><i data-lucide="history"></i></button>
 </form>
 <div id="video"><div id="player"></div></div>
-<main><p id="msg">Paste a YouTube link to start.</p><ol id="list"></ol></main>
+<main><p id="msg"></p><ol id="list"></ol></main>
 <nav>
-  <button id="prev" aria-label="Previous line"><i data-lucide="skip-back"></i></button>
-  <button id="replay" aria-label="Replay line"><i data-lucide="rotate-ccw"></i></button>
-  <button id="play" aria-label="Play/pause"><i data-lucide="play"></i><i data-lucide="pause"></i></button>
-  <button id="next" aria-label="Next line"><i data-lucide="skip-forward"></i></button>
-  <button popovertarget="settings" aria-label="Settings"><i data-lucide="settings"></i></button>
+  <button id="prev" data-t-label="prev"><i data-lucide="skip-back"></i></button>
+  <button id="replay" data-t-label="replay"><i data-lucide="rotate-ccw"></i></button>
+  <button id="play" data-t-label="play"><i data-lucide="play"></i><i data-lucide="pause"></i></button>
+  <button id="next" data-t-label="next"><i data-lucide="skip-forward"></i></button>
+  <button popovertarget="settings" data-t-label="settings"><i data-lucide="settings"></i></button>
 </nav>
-<aside id="history" popover><h2>History</h2><ol id="hist"></ol><p id="histempty">Videos you open show up here.</p></aside>
+<aside id="history" popover><h2 data-t="history"></h2><ol id="hist"></ol><p id="histempty" data-t="empty"></p></aside>
 <div id="settings" popover>
-  <label>Subtitles <select id="lang"></select></label>
-  <label>Pause after each line <input id="autopause" type="checkbox"></label>
-  <label>Speed
+  <div id="ui">
+    <button data-ui="en" aria-label="English"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/1f1ec-1f1e7.svg" alt=""></button>
+    <button data-ui="sv" aria-label="Svenska"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/1f1f8-1f1ea.svg" alt=""></button>
+    <button data-ui="zh-TW" aria-label="繁體中文（台灣）"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/1f1f9-1f1fc.svg" alt=""></button>
+  </div>
+  <label><span data-t="subs"></span> <select id="lang"></select></label>
+  <label><span data-t="autopause"></span> <input id="autopause" type="checkbox"></label>
+  <label><span data-t="speed"></span>
     <select id="speed">
       <option>0.25</option><option>0.5</option><option>0.75</option><option>1</option>
       <option>1.25</option><option>1.5</option><option>1.75</option><option>2</option>
@@ -115,8 +124,42 @@ const $ = s => document.querySelector(s);
 const EPS = 0.03; // seconds of slack around line boundaries
 const ytReady = new Promise(r => window.onYouTubeIframeAPIReady = r);
 
-const settings = { autoPause: true, speed: 1, lang: '' }; // lang: last picked, the default for new videos
+const STRINGS = {
+  en: {
+    url: 'YouTube URL', load: 'Load', history: 'History', start: 'Paste a YouTube link to start.',
+    prev: 'Previous line', replay: 'Replay line', play: 'Play/pause', next: 'Next line', settings: 'Settings',
+    subs: 'Subtitles', auto: 'Auto-generated', autopause: 'Pause after each line', speed: 'Speed',
+    empty: 'Videos you open show up here.', remove: 'Remove from history',
+    tap: 'Tap the video once to enable the controls.', loading: 'Loading subtitles…',
+    nolines: 'No subtitle lines found.', err: 'Couldn\'t load subtitles: ', badurl: 'That doesn\'t look like a YouTube link.',
+  },
+  sv: {
+    url: 'YouTube-länk', load: 'Öppna', history: 'Historik', start: 'Klistra in en YouTube-länk för att börja.',
+    prev: 'Föregående rad', replay: 'Spela raden igen', play: 'Spela/pausa', next: 'Nästa rad', settings: 'Inställningar',
+    subs: 'Undertexter', auto: 'Automatiskt genererade', autopause: 'Pausa efter varje rad', speed: 'Hastighet',
+    empty: 'Videor du öppnar visas här.', remove: 'Ta bort från historiken',
+    tap: 'Tryck på videon en gång för att aktivera kontrollerna.', loading: 'Laddar undertexter…',
+    nolines: 'Inga undertextrader hittades.', err: 'Kunde inte ladda undertexter: ', badurl: 'Det där ser inte ut som en YouTube-länk.',
+  },
+  'zh-TW': {
+    url: 'YouTube 網址', load: '載入', history: '觀看紀錄', start: '貼上 YouTube 連結即可開始。',
+    prev: '上一句', replay: '重播這句', play: '播放/暫停', next: '下一句', settings: '設定',
+    subs: '字幕', auto: '自動產生', autopause: '每句結束後暫停', speed: '播放速度',
+    empty: '你開啟的影片會顯示在這裡。', remove: '從觀看紀錄中移除',
+    tap: '請先點一下影片以啟用控制按鈕。', loading: '正在載入字幕…',
+    nolines: '找不到字幕內容。', err: '無法載入字幕：', badurl: '這看起來不像 YouTube 連結。',
+  },
+};
+const navLang = navigator.language;
+const settings = {
+  autoPause: true, speed: 1,
+  ui: navLang.startsWith('sv') ? 'sv' : navLang.startsWith('zh') ? 'zh-TW' : 'en',
+  lang: '', // subtitle language last picked, the default for new videos
+};
 try { Object.assign(settings, JSON.parse(localStorage.settings)); } catch {}
+if (!STRINGS[settings.ui]) settings.ui = 'en';
+settings.lang ||= `m:${settings.ui}`;
+const t = key => STRINGS[settings.ui][key];
 const save = () => { try { localStorage.settings = JSON.stringify(settings); } catch {} };
 
 let player, vid, cues = [], cur = -1, playing = false, pending = null, lastT = -1, off = null, endTimer = 0;
@@ -130,7 +173,8 @@ const saveHist = () => { try { localStorage.history = JSON.stringify(hist); } ca
 
 const parseId = s => (s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/) || s.trim().match(/^([\w-]{11})$/))?.[1];
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-const msg = text => { $('#msg').textContent = text; $('#msg').hidden = !text; };
+let shown = ['start', '']; // [string key, untranslated suffix] of the message, re-rendered on language change
+const msg = (key, extra = '') => { shown = [key, extra]; $('#msg').textContent = key ? t(key) + extra : ''; $('#msg').hidden = !key; };
 const indexAt = t => cues.findLastIndex(c => c.start <= t + EPS);
 
 // The iframe API only reports time a few times a second, and we notice each report late.
@@ -187,7 +231,7 @@ function togglePlay() {
   if (settings.autoPause && atEnd === cur && cur + 1 < cues.length) go(cur + 1);
   else player.playVideo();
   // mobile browsers refuse scripted playback until the player itself has been tapped once
-  setTimeout(() => { if ([YT.PlayerState.CUED, YT.PlayerState.UNSTARTED].includes(player.getPlayerState())) msg('Tap the video once to enable the controls.'); }, 1500);
+  setTimeout(() => { if ([YT.PlayerState.CUED, YT.PlayerState.UNSTARTED].includes(player.getPlayerState())) msg('tap'); }, 1500);
 }
 
 function tick() {
@@ -230,7 +274,7 @@ async function openVideo(id) {
         document.body.classList.toggle('playing', playing);
         if (playing) {
           if (resume) { resume = false; go(cur); }
-          if ($('#msg').textContent.startsWith('Tap')) msg('');
+          if (shown[0] === 'tap') msg('');
           if (player.getPlaybackRate() !== settings.speed) player.setPlaybackRate(settings.speed);
         }
       },
@@ -239,7 +283,7 @@ async function openVideo(id) {
 }
 
 async function load(id, lang = '', fresh = false) {
-  msg('Loading subtitles…');
+  msg('loading');
   try {
     const r = await fetch(`/api/subs?v=${id}&lang=${encodeURIComponent(lang)}&pref=${encodeURIComponent(settings.lang)}`);
     const d = await r.json();
@@ -253,12 +297,13 @@ async function load(id, lang = '', fresh = false) {
       li.onclick = () => go(i);
       return li;
     }));
-    const group = (label, auto) => {
-      const g = Object.assign(document.createElement('optgroup'), { label });
+    const group = (key, auto) => {
+      const g = Object.assign(document.createElement('optgroup'), { label: t(key) });
+      g.dataset.t = key;
       g.append(...d.langs.filter(l => l.key.startsWith('a:') === auto).map(l => new Option(l.name, l.key)));
       return g.children.length ? [g] : [];
     };
-    $('#lang').replaceChildren(...group('Subtitles', false), ...group('Auto-generated', true));
+    $('#lang').replaceChildren(...group('subs', false), ...group('auto', true));
     $('#lang').value = d.lang;
     if (fresh) { // move to the top of history, resume where they left off
       const t = hist[id]?.t ?? 0;
@@ -274,9 +319,9 @@ async function load(id, lang = '', fresh = false) {
       hist[id].lang = d.lang;
       saveHist();
     }
-    msg(cues.length ? '' : 'No subtitle lines found.');
+    msg(cues.length ? '' : 'nolines');
   } catch (e) {
-    msg(`Couldn't load subtitles: ${e.message}`);
+    msg('err', e.message);
   }
 }
 
@@ -287,7 +332,7 @@ function renderHist() {
     li.dataset.id = id;
     const open = Object.assign(el('button'), { className: 'open', onclick: () => start(id) });
     open.append(h.title, Object.assign(el('span'), { textContent: h.channel }), Object.assign(el('time'), { textContent: fmt(h.t) }));
-    const rm = Object.assign(el('button'), { className: 'rm', ariaLabel: 'Remove from history', onclick: () => { delete hist[id]; saveHist(); renderHist(); } });
+    const rm = Object.assign(el('button'), { className: 'rm', ariaLabel: t('remove'), onclick: () => { delete hist[id]; saveHist(); renderHist(); } });
     rm.innerHTML = '<i data-lucide="x"></i>';
     li.append(open, rm);
     return li;
@@ -304,7 +349,7 @@ function start(id) {
 $('#form').onsubmit = e => {
   e.preventDefault();
   const id = parseId($('#url').value);
-  if (!id) return msg('That doesn\'t look like a YouTube link.');
+  if (!id) return msg('badurl');
   start(id);
 };
 $('#play').onclick = togglePlay;
@@ -317,7 +362,23 @@ $('#autopause').onchange = e => { settings.autoPause = e.target.checked; save();
 $('#speed').value = settings.speed;
 $('#speed').onchange = e => { settings.speed = +e.target.value; player?.setPlaybackRate(settings.speed); save(); };
 
-renderHist();
+function applyUi() {
+  document.documentElement.lang = settings.ui;
+  $('#url').placeholder = t('url');
+  for (const e of document.querySelectorAll('[data-t]')) e[e.tagName === 'OPTGROUP' ? 'label' : 'textContent'] = t(e.dataset.t);
+  for (const e of document.querySelectorAll('[data-t-label]')) e.ariaLabel = t(e.dataset.tLabel);
+  for (const b of $('#ui').children) b.ariaPressed = b.dataset.ui === settings.ui;
+  msg(...shown);
+  renderHist();
+}
+for (const b of $('#ui').children) b.onclick = () => {
+  settings.ui = b.dataset.ui;
+  if (!vid) settings.lang = `m:${settings.ui}`; // nothing loaded yet: subtitles follow the UI language
+  save();
+  applyUi();
+};
+
+applyUi();
 navigator.serviceWorker?.register('sw.js');
 </script>
 <script src="https://www.youtube.com/iframe_api" async></script>
