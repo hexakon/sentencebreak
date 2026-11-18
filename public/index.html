@@ -75,6 +75,9 @@
   #hist button { border: 0; background: none; cursor: pointer; }
   #hist .open { flex: 1; min-width: 0; padding: .5rem .75rem; text-align: left; font-size: .9rem; line-height: 1.3; }
   #hist .open span { display: block; font-size: .8rem; color: var(--dim); }
+  #hist .open small { display: block; font-size: .75rem; color: var(--dim); }
+  #hist .open time { display: inline; }
+  #histbtn { display: grid; place-items: center; }
   #hist .rm { display: grid; padding: .5rem; color: var(--dim); }
   /* desktop: always-visible column right of the content */
   @media (min-width: 60rem) {
@@ -175,6 +178,8 @@ const parseId = s => (s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 let shown = ['start', '']; // [string key, untranslated suffix] of the message, re-rendered on language change
 const msg = (key, extra = '') => { shown = [key, extra]; $('#msg').textContent = key ? t(key) + extra : ''; $('#msg').hidden = !key; };
+// subtitle key ('m:en', 'a:ja-orig') -> language name in the UI language
+const langName = key => { const code = key.slice(2).replace(/-orig$/, ''); try { return new Intl.DisplayNames([settings.ui], { type: 'language' }).of(code); } catch { return code; } };
 const indexAt = t => cues.findLastIndex(c => c.start <= t + EPS);
 
 // The iframe API only reports time a few times a second, and we notice each report late.
@@ -331,7 +336,9 @@ function renderHist() {
     const li = el('li');
     li.dataset.id = id;
     const open = Object.assign(el('button'), { className: 'open', onclick: () => start(id) });
-    open.append(h.title, Object.assign(el('span'), { textContent: h.channel }), Object.assign(el('time'), { textContent: fmt(h.t) }));
+    const meta = el('small');
+    meta.append(Object.assign(el('time'), { textContent: fmt(h.t) }), ...h.lang ? [` · ${langName(h.lang)}`] : []);
+    open.append(h.title, Object.assign(el('span'), { textContent: h.channel }), meta);
     const rm = Object.assign(el('button'), { className: 'rm', ariaLabel: t('remove'), onclick: () => { delete hist[id]; saveHist(); renderHist(); } });
     rm.innerHTML = '<i data-lucide="x"></i>';
     li.append(open, rm);
