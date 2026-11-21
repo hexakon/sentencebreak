@@ -37,6 +37,9 @@
   li:has(~ li.cur) { color: var(--dim); }
   li.cur { background: color-mix(in srgb, var(--accent) 15%, transparent); font-weight: 600; }
   li.cur time { color: var(--accent); }
+  li span { border-radius: 1em; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: color .2s, background .2s; }
+  /* upcoming lines (all of them before the first line starts) show as gray pills */
+  body.hideahead #list li:not(.cur, :has(~ .cur)) span { color: transparent; background: var(--line); user-select: none; }
   nav {
     flex: none; display: flex; justify-content: space-around; align-items: center;
     padding: .5rem; padding-bottom: max(.5rem, env(safe-area-inset-bottom)); border-top: 1px solid var(--line);
@@ -56,7 +59,7 @@
   #ui button[aria-pressed=true] { border-color: var(--accent); }
   #ui img { width: 2rem; height: 2rem; }
   #settings label { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .4rem 0; }
-  #settings select { max-width: 10rem; }
+  #settings select { max-width: 10rem; min-width: 0; }
   #settings input[type=checkbox] { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); }
   /* mobile: drawer sliding in from the right */
   #history {
@@ -113,6 +116,7 @@
   </div>
   <label><span data-t="subs"></span> <select id="lang"></select></label>
   <label><span data-t="autopause"></span> <input id="autopause" type="checkbox"></label>
+  <label><span data-t="hideahead"></span> <input id="hideahead" type="checkbox"></label>
   <label><span data-t="speed"></span>
     <select id="speed">
       <option>0.25</option><option>0.5</option><option>0.75</option><option>1</option>
@@ -131,7 +135,7 @@ const STRINGS = {
   en: {
     url: 'YouTube URL', load: 'Load', history: 'History', start: 'Paste a YouTube link to start.',
     prev: 'Previous line', replay: 'Replay line', play: 'Play/pause', next: 'Next line', settings: 'Settings',
-    subs: 'Subtitles', auto: 'Auto-generated', autopause: 'Pause after each line', speed: 'Speed',
+    subs: 'Subtitles', auto: 'Auto-generated', autopause: 'Pause after each line', hideahead: 'Hide upcoming lines', speed: 'Speed',
     empty: 'Videos you open show up here.', remove: 'Remove from history',
     tap: 'Tap the video once to enable the controls.', loading: 'Loading subtitles…',
     nolines: 'No subtitle lines found.', err: 'Couldn\'t load subtitles: ', badurl: 'That doesn\'t look like a YouTube link.',
@@ -139,7 +143,7 @@ const STRINGS = {
   sv: {
     url: 'YouTube-länk', load: 'Öppna', history: 'Historik', start: 'Klistra in en YouTube-länk för att börja.',
     prev: 'Föregående rad', replay: 'Spela raden igen', play: 'Spela/pausa', next: 'Nästa rad', settings: 'Inställningar',
-    subs: 'Undertexter', auto: 'Automatiskt genererade', autopause: 'Pausa efter varje rad', speed: 'Hastighet',
+    subs: 'Undertexter', auto: 'Automatiskt genererade', autopause: 'Pausa efter varje rad', hideahead: 'Dölj kommande rader', speed: 'Hastighet',
     empty: 'Videor du öppnar visas här.', remove: 'Ta bort från historiken',
     tap: 'Tryck på videon en gång för att aktivera kontrollerna.', loading: 'Laddar undertexter…',
     nolines: 'Inga undertextrader hittades.', err: 'Kunde inte ladda undertexter: ', badurl: 'Det där ser inte ut som en YouTube-länk.',
@@ -147,7 +151,7 @@ const STRINGS = {
   'zh-TW': {
     url: 'YouTube 網址', load: '載入', history: '觀看紀錄', start: '貼上 YouTube 連結即可開始。',
     prev: '上一句', replay: '重播這句', play: '播放/暫停', next: '下一句', settings: '設定',
-    subs: '字幕', auto: '自動產生', autopause: '每句結束後暫停', speed: '播放速度',
+    subs: '字幕', auto: '自動產生', autopause: '每句結束後暫停', hideahead: '隱藏接下來的字幕', speed: '播放速度',
     empty: '你開啟的影片會顯示在這裡。', remove: '從觀看紀錄中移除',
     tap: '請先點一下影片以啟用控制按鈕。', loading: '正在載入字幕…',
     nolines: '找不到字幕內容。', err: '無法載入字幕：', badurl: '這看起來不像 YouTube 連結。',
@@ -155,7 +159,7 @@ const STRINGS = {
 };
 const navLang = navigator.language;
 const settings = {
-  autoPause: true, speed: 1,
+  autoPause: true, hideAhead: false, speed: 1,
   ui: navLang.startsWith('sv') ? 'sv' : navLang.startsWith('zh') ? 'zh-TW' : 'en',
   lang: '', // subtitle language last picked, the default for new videos
 };
@@ -298,7 +302,7 @@ async function load(id, lang = '', fresh = false) {
     cur = -1;
     $('#list').replaceChildren(...cues.map((c, i) => {
       const li = document.createElement('li');
-      li.append(Object.assign(document.createElement('time'), { textContent: fmt(c.start) }), c.text);
+      li.append(Object.assign(document.createElement('time'), { textContent: fmt(c.start) }), Object.assign(document.createElement('span'), { textContent: c.text }));
       li.onclick = () => go(i);
       return li;
     }));
@@ -366,6 +370,9 @@ $('#next').onclick = () => go(cur + 1);
 $('#lang').onchange = e => { settings.lang = e.target.value; save(); load(vid, settings.lang); };
 $('#autopause').checked = settings.autoPause;
 $('#autopause').onchange = e => { settings.autoPause = e.target.checked; save(); };
+$('#hideahead').checked = settings.hideAhead;
+document.body.classList.toggle('hideahead', settings.hideAhead);
+$('#hideahead').onchange = e => { settings.hideAhead = e.target.checked; document.body.classList.toggle('hideahead', settings.hideAhead); save(); };
 $('#speed').value = settings.speed;
 $('#speed').onchange = e => { settings.speed = +e.target.value; player?.setPlaybackRate(settings.speed); save(); };
 
